@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetGuard Pro — Network Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/dist/vis-network.min.js"></script>
+<style>
+:root {
+  --bg:        #0a0d14;
+  --surface:   #111520;
+  --surface2:  #161b2e;
+  --border:    rgba(99,179,237,0.12);
+  --accent:    #63b3ed;
+  --accent2:   #76e4f7;
+  --green:     #48bb78;
+  --red:       #fc8181;
+  --yellow:    #f6e05e;
+  --purple:    #b794f4;
+  --text:      #e2e8f0;
+  --muted:     #718096;
+  --glow:      rgba(99,179,237,0.15);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+.sidebar {
+  width: 220px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.logo {
+  padding: 20px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.logo-icon { font-size: 22px; }
+.logo-text { font-weight: 700; font-size: 15px; color: var(--accent2); letter-spacing: 0.5px; }
+.logo-sub  { font-size: 10px; color: var(--muted); font-weight: 400; }
+
+.nav { padding: 16px 0; flex: 1; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 18px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+.nav-item:hover { background: var(--glow); color: var(--text); }
+.nav-item.active {
+  border-left-color: var(--accent);
+  background: var(--glow);
+  color: var(--accent);
+}
+.nav-icon { font-size: 16px; width: 20px; text-align: center; }
+
+.sidebar-stats {
+  padding: 16px;
+  border-top: 1px solid var(--border);
+}
+.stat-row { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px; }
+.stat-label { color: var(--muted); }
+.stat-val   { color: var(--accent2); font-family: 'JetBrains Mono'; font-weight: 500; }
+
+.mini-bar { background: rgba(255,255,255,0.08); border-radius: 999px; height: 4px; margin-bottom: 10px; overflow: hidden; }
+.mini-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 999px; transition: width 0.5s; }
+
+/* ── Main ─────────────────────────────────────────────────────────────────── */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.topbar-title { font-weight: 600; font-size: 15px; }
+.topbar-right { display: flex; align-items: center; gap: 14px; }
+.pill {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.pill-green { background: rgba(72,187,120,0.15); color: var(--green); border: 1px solid rgba(72,187,120,0.25); }
+.pill-blue  { background: rgba(99,179,237,0.12); color: var(--accent); border: 1px solid rgba(99,179,237,0.2); }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+.btn-scan {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #0a0d14;
+  border: none;
+  padding: 7px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.btn-scan:hover { opacity: 0.85; }
+
+/* ── Content ─────────────────────────────────────────────────────────────── */
+.content { flex: 1; overflow-y: auto; padding: 20px 24px; display: none; }
+.content.active { display: block; }
+
+/* ── Cards ─────────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.card-title { font-weight: 600; font-size: 13.5px; color: var(--accent2); display: flex; align-items: center; gap: 7px; }
+
+/* ── Grid ─────────────────────────────────────────────────────────────────── */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+
+/* ── Stat cards ──────────────────────────────────────────────────────────── */
+.stat-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+}
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+}
+.stat-icon { font-size: 22px; margin-bottom: 8px; }
+.stat-number { font-size: 28px; font-weight: 700; font-family: 'JetBrains Mono'; color: var(--text); }
+.stat-label2 { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+/* ── Device table ─────────────────────────────────────────────────────────── */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th {
+  text-align: left;
+  padding: 8px 12px;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+}
+td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+tr:hover td { background: rgba(99,179,237,0.04); }
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600;
+}
+.badge-online  { background: rgba(72,187,120,0.15); color: var(--green); }
+.badge-offline { background: rgba(252,129,129,0.12); color: var(--red); }
+.badge-cam     { background: rgba(183,148,244,0.15); color: var(--purple); }
+
+.mono { font-family: 'JetBrains Mono'; font-size: 11.5px; color: var(--accent); }
+
+/* ── Alerts ───────────────────────────────────────────────────────────────── */
+.alert-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  animation: slideIn 0.3s ease;
+}
+@keyframes slideIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+.alert-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.alert-msg  { font-size: 12.5px; flex: 1; }
+.alert-time { font-size: 10.5px; color: var(--muted); font-family: 'JetBrains Mono'; white-space: nowrap; }
+
+/* ── Network graph ─────────────────────────────────────────────────────────── */
+#network-graph {
+  width: 100%; height: 340px;
+  background: var(--surface2);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+/* ── Camera section ──────────────────────────────────────────────────────── */
+.cam-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.cam-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+}
+.cam-card img, .cam-card video { width: 100%; height: 200px; object-fit: cover; background: #000; display: block; }
+.cam-footer { padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; }
+.cam-label { font-size: 12.5px; font-weight: 600; }
+.cam-del { background: rgba(252,129,129,0.15); color: var(--red); border: none; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; }
+
+.cam-add {
+  display: flex; flex-direction: column; gap: 8px;
+  align-items: flex-start;
+}
+.input-row { display: flex; gap: 8px; width: 100%; }
+input[type=text] {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: 'JetBrains Mono';
+  flex: 1;
+  outline: none;
+}
+input[type=text]:focus { border-color: var(--accent); }
+.btn-add {
+  background: linear-gradient(135deg, var(--green), #38a169);
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ── Chart wrapper ──────────────────────────────────────────────────────── */
+.chart-wrap { position: relative; height: 180px; }
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(99,179,237,0.25); border-radius: 99px; }
+
+/* ── Scan animation ────────────────────────────────────────────────────── */
+.scan-ring {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid var(--accent);
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
+  display: none;
+}
+.scanning .scan-ring { display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.ts { font-size: 10.5px; color: var(--muted); font-family: 'JetBrains Mono'; }
+
+/* ── Empty state ────────────────────────────────────────────────────────── */
+.empty { text-align: center; padding: 40px 20px; color: var(--muted); }
+.empty-icon { font-size: 36px; margin-bottom: 10px; }
+.empty-text { font-size: 13px; }
+</style>
+</head>
+<body>
+
+<!-- ── Sidebar ── -->
+<div class="sidebar">
+  <div class="logo">
+    <span class="logo-icon">🛡️</span>
+    <div>
+      <div class="logo-text">NetGuard Pro</div>
+      <div class="logo-sub">Network Dashboard</div>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <div class="nav-item active" onclick="showPage('overview')" id="nav-overview">
+      <span class="nav-icon">📊</span> Overview
+    </div>
+    <div class="nav-item" onclick="showPage('devices')" id="nav-devices">
+      <span class="nav-icon">📡</span> Devices
+    </div>
+    <div class="nav-item" onclick="showPage('bandwidth')" id="nav-bandwidth">
+      <span class="nav-icon">⚡</span> Bandwidth
+    </div>
+    <div class="nav-item" onclick="showPage('network-map')" id="nav-network-map">
+      <span class="nav-icon">🗺️</span> Network Map
+    </div>
+    <div class="nav-item" onclick="showPage('cameras')" id="nav-cameras">
+      <span class="nav-icon">📷</span> Cameras
+    </div>
+    <div class="nav-item" onclick="showPage('alerts')" id="nav-alerts">
+      <span class="nav-icon">🔔</span> Alerts <span id="alert-badge" style="margin-left:auto;background:var(--red);color:#fff;border-radius:999px;padding:1px 7px;font-size:10px;display:none"></span>
+    </div>
+  </nav>
+
+  <div class="sidebar-stats">
+    <div class="stat-row"><span class="stat-label">CPU</span><span class="stat-val" id="sb-cpu">—</span></div>
+    <div class="mini-bar"><div class="mini-fill" id="sb-cpu-bar" style="width:0%"></div></div>
+    <div class="stat-row"><span class="stat-label">RAM</span><span class="stat-val" id="sb-ram">—</span></div>
+    <div class="mini-bar"><div class="mini-fill" id="sb-ram-bar" style="width:0%"></div></div>
+    <div class="stat-row"><span class="stat-label">My IP</span><span class="stat-val" style="font-size:10px">{{ local_ip }}</span></div>
+    <div class="stat-row"><span class="stat-label">Network</span><span class="stat-val" style="font-size:10px">{{ network }}</span></div>
+  </div>
+</div>
+
+<!-- ── Main ── -->
+<div class="main">
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="topbar-title" id="page-title">📊 Overview</div>
+    <div class="topbar-right">
+      <div class="pill pill-green"><span class="dot"></span> Live</div>
+      <div class="pill pill-blue" id="scan-status">
+        <span class="scan-ring" id="scan-ring"></span>
+        <span id="scan-text">Ready</span>
+      </div>
+      <button class="btn-scan" onclick="requestScan()">🔍 Scan Now</button>
+    </div>
+  </div>
+
+  <!-- ── Overview Page ── -->
+  <div class="content active" id="page-overview">
+    <div class="grid-3" style="margin-bottom:16px">
+      <div class="stat-card">
+        <div class="stat-icon">📡</div>
+        <div class="stat-number" id="stat-devices">0</div>
+        <div class="stat-label2">Devices Online</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🔔</div>
+        <div class="stat-number" id="stat-alerts">0</div>
+        <div class="stat-label2">Total Alerts</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">📷</div>
+        <div class="stat-number" id="stat-cameras">0</div>
+        <div class="stat-label2">Camera Feeds</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">⚡ Live Bandwidth</div>
+          <span class="ts" id="bw-ts">—</span>
+        </div>
+        <div class="chart-wrap"><canvas id="bw-chart"></canvas></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🔔 Recent Alerts</div>
+        </div>
+        <div id="overview-alerts">
+          <div class="empty"><div class="empty-icon">✅</div><div class="empty-text">No alerts yet</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📡 Online Devices</div>
+        <span class="ts" id="dev-ts-ov">—</span>
+      </div>
+      <div class="table-wrap" id="overview-table">
+        <div class="empty"><div class="empty-icon">🔍</div><div class="empty-text">Scanning network…</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Devices Page ── -->
+  <div class="content" id="page-devices">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📡 All Network Devices</div>
+        <span class="ts" id="dev-ts">—</span>
+      </div>
+      <div class="table-wrap" id="devices-table">
+        <div class="empty"><div class="empty-icon">🔍</div><div class="empty-text">Scanning…</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Bandwidth Page ── -->
+  <div class="content" id="page-bandwidth">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">⚡ Interface Bandwidth (KB/s)</div>
+        <span class="ts" id="bw-ts2">—</span>
+      </div>
+      <div class="chart-wrap" style="height:300px"><canvas id="bw-chart2"></canvas></div>
+    </div>
+    <div class="card" id="bw-detail">
+      <div class="card-header"><div class="card-title">📊 Interface Details</div></div>
+      <div id="bw-table"></div>
+    </div>
+  </div>
+
+  <!-- ── Network Map Page ── -->
+  <div class="content" id="page-network-map">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🗺️ Network Topology</div>
+        <span class="ts">Live — updates every 30s</span>
+      </div>
+      <div id="network-graph"></div>
+    </div>
+  </div>
+
+  <!-- ── Cameras Page ── -->
+  <div class="content" id="page-cameras">
+    <div class="card">
+      <div class="card-header"><div class="card-title">📷 Add Camera Stream</div></div>
+      <div class="cam-add">
+        <div class="input-row">
+          <input type="text" id="cam-url" placeholder="rtsp://admin:admin@192.168.1.100:554/ or http://..." />
+          <input type="text" id="cam-label" placeholder="Label (e.g. Front Door)" style="max-width:180px" />
+          <button class="btn-add" onclick="addCamera()">＋ Add</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted)">
+          Supports: RTSP, HTTP MJPEG, HikVision, Dahua, CP Plus streams
+        </div>
+      </div>
+    </div>
+    <div class="cam-grid" id="cam-grid">
+      <div class="empty" style="grid-column:1/-1">
+        <div class="empty-icon">📷</div>
+        <div class="empty-text">No cameras added yet. Enter an RTSP URL above.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Alerts Page ── -->
+  <div class="content" id="page-alerts">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🔔 Alert History</div>
+        <button onclick="clearAlerts()" style="background:rgba(252,129,129,0.15);color:var(--red);border:none;padding:4px 12px;border-radius:6px;font-size:11px;cursor:pointer">Clear All</button>
+      </div>
+      <div id="alerts-list">
+        <div class="empty"><div class="empty-icon">✅</div><div class="empty-text">No alerts</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Socket.IO ─────────────────────────────────────────────────────────────────
+const socket = io();
+let devices  = [];
+let alerts   = [];
+let cameras  = [];
+let bwData   = {};
+let bwHistory= {labels:[], datasets:[]};
+const MAX_BW_POINTS = 30;
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+const bwColors = ['#63b3ed','#76e4f7','#48bb78','#b794f4','#f6e05e','#fc8181'];
+
+function makeBwChart(canvasId) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  return new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 200 },
+      plugins: { legend: { labels: { color: '#a0aec0', font: { size: 11 } } } },
+      scales: {
+        x: { ticks: { color: '#4a5568', font:{size:10} }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { ticks: { color: '#4a5568', font:{size:10} }, grid: { color: 'rgba(255,255,255,0.05)' },
+             title: { display: true, text: 'KB/s', color: '#718096', font:{size:11} } }
+      }
+    }
+  });
+}
+
+const chart1 = makeBwChart('bw-chart');
+const chart2 = makeBwChart('bw-chart2');
+
+function updateBwChart(chart, bwData, ts) {
+  const ifaces = Object.keys(bwData);
+  // Ensure datasets exist
+  ifaces.forEach((iface, i) => {
+    let ds = chart.data.datasets.find(d => d.label === iface + ' ↓');
+    if (!ds) {
+      chart.data.datasets.push({
+        label: iface + ' ↓',
+        data: [],
+        borderColor: bwColors[i % bwColors.length],
+        backgroundColor: bwColors[i % bwColors.length] + '22',
+        tension: 0.4, pointRadius: 0, fill: true, borderWidth: 1.5,
+      });
+    }
+  });
+  // Push new data
+  chart.data.labels.push(ts);
+  if (chart.data.labels.length > MAX_BW_POINTS) chart.data.labels.shift();
+  ifaces.forEach((iface, i) => {
+    let ds = chart.data.datasets.find(d => d.label === iface + ' ↓');
+    if (ds) {
+      ds.data.push(bwData[iface].down);
+      if (ds.data.length > MAX_BW_POINTS) ds.data.shift();
+    }
+  });
+  chart.update('none');
+}
+
+// ── Network Graph (vis.js) ────────────────────────────────────────────────────
+let network = null;
+const graphNodes = new vis.DataSet();
+const graphEdges = new vis.DataSet();
+
+function initGraph() {
+  const container = document.getElementById('network-graph');
+  const opts = {
+    nodes: {
+      shape: 'dot', size: 16,
+      font: { color: '#e2e8f0', size: 12, face: 'Inter' },
+      borderWidth: 2,
+    },
+    edges: {
+      color: { color: 'rgba(99,179,237,0.3)', highlight: '#63b3ed' },
+      smooth: { type: 'dynamic' }, width: 1.5,
+    },
+    physics: { stabilization: true, barnesHut: { gravitationalConstant: -8000 } },
+    background: { fill: 'transparent' },
+  };
+  network = new vis.Network(container, { nodes: graphNodes, edges: graphEdges }, opts);
+}
+
+function updateGraph(devs) {
+  const myIp = '{{ local_ip }}';
+  const routerIp = myIp.split('.').slice(0,3).join('.') + '.1';
+
+  graphNodes.clear();
+  graphEdges.clear();
+
+  // Router node
+  graphNodes.add({ id: 'router', label: '📡 Router\n' + routerIp,
+    color: { background: '#1a365d', border: '#63b3ed' }, size: 22 });
+
+  // My node
+  graphNodes.add({ id: myIp, label: '💻 You\n' + myIp,
+    color: { background: '#276749', border: '#48bb78' }, size: 20 });
+  graphEdges.add({ from: 'router', to: myIp });
+
+  devs.forEach(d => {
+    if (d.ip === myIp) return;
+    const icon = d.vendor.includes('Apple') ? '🍎' :
+                 d.vendor.includes('Hik')   ? '📷' :
+                 d.vendor.includes('Dahua') ? '📷' :
+                 d.vendor.includes('TP')    ? '📶' : '📱';
+    graphNodes.add({
+      id: d.ip,
+      label: icon + ' ' + (d.hostname !== '—' ? d.hostname : d.vendor) + '\n' + d.ip,
+      color: { background: '#2d3748', border: '#4a5568' },
+    });
+    graphEdges.add({ from: 'router', to: d.ip });
+  });
+}
+
+// ── Render Helpers ─────────────────────────────────────────────────────────────
+function renderDeviceTable(containerId, devs) {
+  if (!devs.length) {
+    document.getElementById(containerId).innerHTML =
+      '<div class="empty"><div class="empty-icon">🔍</div><div class="empty-text">No devices found. Click Scan Now.</div></div>';
+    return;
+  }
+  const rows = devs.map((d,i) => `
+    <tr>
+      <td class="mono">${d.ip}</td>
+      <td class="mono" style="color:var(--muted);font-size:11px">${d.mac}</td>
+      <td>${d.hostname}</td>
+      <td>${d.vendor}</td>
+      <td><span class="badge badge-online"><span style="width:5px;height:5px;border-radius:50%;background:var(--green);display:inline-block"></span> Online</span></td>
+      <td style="color:var(--muted);font-size:11px">${d.last_seen || '—'}</td>
+    </tr>`).join('');
+  document.getElementById(containerId).innerHTML = `
+    <table>
+      <thead><tr><th>IP</th><th>MAC</th><th>Hostname</th><th>Vendor</th><th>Status</th><th>Last Seen</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function renderAlerts(containerId, alts, limit=null) {
+  const list = limit ? alts.slice(0, limit) : alts;
+  if (!list.length) {
+    document.getElementById(containerId).innerHTML =
+      '<div class="empty"><div class="empty-icon">✅</div><div class="empty-text">No alerts</div></div>';
+    return;
+  }
+  document.getElementById(containerId).innerHTML = list.map(a => `
+    <div class="alert-item">
+      <span class="alert-icon">${a.type === 'new_device' ? '🆕' : '⚠️'}</span>
+      <div>
+        <div class="alert-msg">${a.message}</div>
+        <div class="ts">${a.ip}</div>
+      </div>
+      <span class="alert-time">${a.time}</span>
+    </div>`).join('');
+}
+
+function renderBwTable(bw) {
+  const rows = Object.entries(bw).map(([iface, d]) => `
+    <tr>
+      <td style="font-weight:600">${iface}</td>
+      <td style="color:var(--yellow)">↑ ${d.up.toFixed(1)} KB/s</td>
+      <td style="color:var(--accent)">↓ ${d.down.toFixed(1)} KB/s</td>
+      <td style="color:var(--muted)">${d.total_up.toFixed(1)} MB sent</td>
+      <td style="color:var(--muted)">${d.total_down.toFixed(1)} MB recv</td>
+    </tr>`).join('');
+  document.getElementById('bw-table').innerHTML = `
+    <table>
+      <thead><tr><th>Interface</th><th>Upload</th><th>Download</th><th>Total Sent</th><th>Total Recv</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function renderCameras(cams) {
+  const grid = document.getElementById('cam-grid');
+  if (!cams.length) {
+    grid.innerHTML = '<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📷</div><div class="empty-text">No cameras. Add an RTSP URL above.</div></div>';
+    return;
+  }
+  grid.innerHTML = cams.map((c, i) => `
+    <div class="cam-card">
+      <img src="${c.url}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+           style="width:100%;height:200px;object-fit:cover;background:#000">
+      <div style="width:100%;height:200px;background:#0d1117;display:none;align-items:center;justify-content:center;flex-direction:column;gap:8px;color:var(--muted)">
+        <div style="font-size:28px">📷</div>
+        <div style="font-size:11px">Stream unavailable</div>
+        <div style="font-size:10px;font-family:'JetBrains Mono';color:var(--accent);word-break:break-all;padding:0 10px;text-align:center">${c.url}</div>
+      </div>
+      <div class="cam-footer">
+        <span class="cam-label">${c.label}</span>
+        <button class="cam-del" onclick="removeCamera(${i})">✕ Remove</button>
+      </div>
+    </div>`).join('');
+}
+
+// ── Socket Events ──────────────────────────────────────────────────────────────
+socket.on('devices_update', data => {
+  devices = data.devices;
+  const ts = data.ts;
+  document.getElementById('stat-devices').textContent = devices.length;
+  document.getElementById('dev-ts').textContent = 'Updated ' + ts;
+  document.getElementById('dev-ts-ov').textContent = 'Updated ' + ts;
+  renderDeviceTable('devices-table', devices);
+  renderDeviceTable('overview-table', devices.slice(0, 6));
+  updateGraph(devices);
+  setScanDone();
+});
+
+socket.on('bandwidth_update', data => {
+  bwData = data.bandwidth;
+  const ts = data.ts;
+  document.getElementById('bw-ts').textContent = ts;
+  document.getElementById('bw-ts2').textContent = ts;
+  updateBwChart(chart1, bwData, ts);
+  updateBwChart(chart2, bwData, ts);
+  renderBwTable(bwData);
+});
+
+socket.on('system_stats', data => {
+  document.getElementById('sb-cpu').textContent = data.cpu.toFixed(0) + '%';
+  document.getElementById('sb-ram').textContent = data.ram.toFixed(0) + '%';
+  document.getElementById('sb-cpu-bar').style.width = data.cpu + '%';
+  document.getElementById('sb-ram-bar').style.width = data.ram + '%';
+});
+
+socket.on('alert', a => {
+  alerts.unshift(a);
+  updateAlertBadge();
+  renderAlerts('alerts-list', alerts);
+  renderAlerts('overview-alerts', alerts, 4);
+  document.getElementById('stat-alerts').textContent = alerts.length;
+});
+
+socket.on('alerts_init', alts => {
+  alerts = alts;
+  updateAlertBadge();
+  renderAlerts('alerts-list', alerts);
+  renderAlerts('overview-alerts', alerts, 4);
+  document.getElementById('stat-alerts').textContent = alerts.length;
+});
+
+socket.on('cameras_update', cams => {
+  cameras = cams;
+  document.getElementById('stat-cameras').textContent = cameras.length;
+  renderCameras(cameras);
+});
+
+socket.on('scan_start', data => {
+  document.getElementById('scan-ring').style.display = 'inline-block';
+  document.getElementById('scan-text').textContent = 'Scanning…';
+});
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+function setScanDone() {
+  document.getElementById('scan-ring').style.display = 'none';
+  document.getElementById('scan-text').textContent = 'Updated';
+  setTimeout(() => {
+    document.getElementById('scan-text').textContent = 'Ready';
+  }, 3000);
+}
+
+function requestScan() {
+  document.getElementById('scan-ring').style.display = 'inline-block';
+  document.getElementById('scan-text').textContent = 'Scanning…';
+  socket.emit('request_scan');
+}
+
+function addCamera() {
+  const url   = document.getElementById('cam-url').value.trim();
+  const label = document.getElementById('cam-label').value.trim() || 'Camera';
+  if (!url) return;
+  fetch('/api/cameras', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({url, label})
+  });
+  document.getElementById('cam-url').value   = '';
+  document.getElementById('cam-label').value = '';
+}
+
+function removeCamera(idx) {
+  fetch('/api/cameras/' + idx, { method: 'DELETE' });
+}
+
+function clearAlerts() {
+  alerts = [];
+  renderAlerts('alerts-list', alerts);
+  renderAlerts('overview-alerts', alerts, 4);
+  document.getElementById('stat-alerts').textContent = 0;
+  document.getElementById('alert-badge').style.display = 'none';
+}
+
+function updateAlertBadge() {
+  const badge = document.getElementById('alert-badge');
+  if (alerts.length > 0) {
+    badge.textContent = alerts.length;
+    badge.style.display = 'inline-block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// ── Page Navigation ───────────────────────────────────────────────────────────
+const PAGES = ['overview','devices','bandwidth','network-map','cameras','alerts'];
+const TITLES = {
+  'overview':    '📊 Overview',
+  'devices':     '📡 Devices',
+  'bandwidth':   '⚡ Bandwidth',
+  'network-map': '🗺️ Network Map',
+  'cameras':     '📷 Cameras',
+  'alerts':      '🔔 Alerts',
+};
+
+function showPage(id) {
+  PAGES.forEach(p => {
+    document.getElementById('page-' + p).classList.toggle('active', p === id);
+    document.getElementById('nav-' + p).classList.toggle('active', p === id);
+  });
+  document.getElementById('page-title').textContent = TITLES[id] || id;
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+initGraph();
+requestScan();
+</script>
+</body>
+</html>
