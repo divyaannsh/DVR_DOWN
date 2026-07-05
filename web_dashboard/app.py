@@ -58,9 +58,44 @@ def get_local_ip():
         ip = s.getsockname()[0]; s.close(); return ip
     except: return "127.0.0.1"
 
+import urllib.request
+import json
+
 def vendor_from_mac(mac):
-    prefix = mac.upper()[:8] if mac and mac != "N/A" else ""
-    return OUI_MAP.get(prefix, "Unknown")
+    if not mac or mac == "N/A":
+        return "—"
+    
+    mac = mac.upper()
+    prefix = mac[:8]
+    
+    # ── Check for Locally Administered (Private/Randomized) MACs ────────────────
+    # If the second hex character is 2, 6, A, or E (e.g. 42, 4e, 82, 3a)
+    # it is a randomized privacy address used by Android/iOS/Windows.
+    second_char = mac[1]
+    if second_char in ('2', '6', 'A', 'E'):
+        return "Private Address (Phone/PC)"
+
+    # Check static map first
+    if prefix in OUI_MAP:
+        return OUI_MAP[prefix]
+
+    # Fallback: Query a free MAC lookup API (Cached or live)
+    try:
+        url = f"https://api.macvendors.com/{prefix}"
+        req = urllib.request.Request(
+            url, 
+            headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
+        )
+        with urllib.request.urlopen(req, timeout=1.5) as response:
+            vendor = response.read().decode('utf-8').strip()
+            # Cache it statically so we don't spam the API
+            OUI_MAP[prefix] = vendor
+            return vendor
+    except Exception:
+        # Default fallback
+        if prefix.startswith("7C:1E:4A"):
+            return "Fortune Mktg (Router/Tenda)"
+        return "Unknown Device"
 
 def ping(ip, timeout=1):
     r = subprocess.run(["ping","-c","1","-W",str(timeout), ip],
