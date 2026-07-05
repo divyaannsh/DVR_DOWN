@@ -1,0 +1,17 @@
+# Models — auto-downloaded on first run, no need to commit
+densepose_demo/models/
+densepose_demo/outputs/
+screenshots/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Mac
+.DS_Store
