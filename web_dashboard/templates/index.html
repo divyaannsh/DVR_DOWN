@@ -574,8 +574,15 @@ function updateGraph(devs) {
   graphNodes.clear();
   graphEdges.clear();
 
+  // Find router's real vendor dynamically if scanned
+  let routerVendor = "Router";
+  const routerDev = devs.find(d => d.ip === routerIp);
+  if (routerDev && routerDev.vendor && routerDev.vendor !== "—") {
+    routerVendor = routerDev.vendor;
+  }
+
   // Router node
-  graphNodes.add({ id: 'router', label: '📡 Router\n' + routerIp,
+  graphNodes.add({ id: 'router', label: '📡 ' + routerVendor + '\n' + routerIp,
     color: { background: '#1a365d', border: '#63b3ed' }, size: 22 });
 
   // My node
@@ -584,11 +591,11 @@ function updateGraph(devs) {
   graphEdges.add({ from: 'router', to: myIp });
 
   devs.forEach(d => {
-    if (d.ip === myIp) return;
-    const icon = d.vendor.includes('Apple') ? '🍎' :
-                 d.vendor.includes('Hik')   ? '📷' :
-                 d.vendor.includes('Dahua') ? '📷' :
-                 d.vendor.includes('TP')    ? '📶' : '📱';
+    if (d.ip === myIp || d.ip === routerIp) return; // ── FIX: skip duplicate router & client nodes
+    const icon = (d.vendor && d.vendor.includes('Apple')) ? '🍎' :
+                 (d.vendor && (d.vendor.includes('Hik') || d.vendor.includes('Dahua'))) ? '📷' :
+                 (d.vendor && d.vendor.includes('TP'))    ? '📶' :
+                 (d.vendor && d.vendor.includes('Private')) ? '📱' : '📱';
     graphNodes.add({
       id: d.ip,
       label: icon + ' ' + (d.hostname !== '—' ? d.hostname : d.vendor) + '\n' + d.ip,
